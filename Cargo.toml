@@ -1,0 +1,11 @@
+[package]
+name = "ferrisquery"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rcon = { version = "0.6.0", features = ["rt-tokio"] }
+serenity = "0.11.5"
+tokio = { version = "1.21.2", features = ["rt-multi-thread"] }
