@@ -18,6 +18,18 @@ full address would be `127.0.0.1:25575`.
 - `RCON_PASS`: The RCON password as configured in `server.properties`.
 - `DISCORD_TOKEN`: The token of your discord bot.
 
+Here's an example shell script similar to the one that I use:
+```sh
+#!/bin/sh
+GUILD_ID="<insert guild id here>" \
+OP_ROLE_ID="<insert op role id here>" \
+RCON_ADDR="127.0.0.1:25575" \
+RCON_PASS="<insert rcon password here>" \
+DISCORD_TOKEN="<insert discord bot token here>" \
+\
+./ferrisquery
+```
+
 Your discord bot must be authorized with the `application.command` and `bot` scopes, and must additionally have the "Send Messages" permission.
 
 You must also verify the following in `server.properties`:
