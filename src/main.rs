@@ -51,6 +51,7 @@ impl EventHandler for Handler {
                         Cow::Borrowed("You're not an op!")
                     }
                 }
+                "source" => Cow::Borrowed("<https://github.com/booleancoercion/ferrisquery>"),
                 _ => Cow::Borrowed("not implemented :("),
             };
 
@@ -71,7 +72,8 @@ impl EventHandler for Handler {
         println!("{} is connected!", ready.user.name);
 
         let commands = GuildId::set_application_commands(&self.guild_id, &ctx.http, |commands| {
-            commands.create_application_command(|command| commands::run::register(command))
+            commands.create_application_command(|command| commands::run::register(command));
+            commands.create_application_command(|command| commands::source::register(command))
         })
         .await;
 
