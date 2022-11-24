@@ -1,15 +1,38 @@
+use std::borrow::Cow;
+
 use serenity::builder::CreateApplicationCommand;
 use serenity::model::prelude::command::CommandOptionType;
 use serenity::model::prelude::interaction::application_command::{
     CommandDataOption, CommandDataOptionValue,
 };
 
-pub fn run(options: &[CommandDataOption]) -> String {
-    let [CommandDataOption { resolved: Some(CommandDataOptionValue::String(string)), .. }] = options else {
-        return "expected an argument, and it must be a string".into()
+use crate::interface::Interface;
+
+const MAXLEN: usize = 2000 - "Success:\n```\n\n```".len();
+const CUTOFF_SUFFIX: &str = "...";
+
+pub async fn run(interface: &mut Interface, options: &[CommandDataOption]) -> Cow<'static, str> {
+    let [CommandDataOption { resolved: Some(CommandDataOptionValue::String(command)), .. }] = options else {
+        return Cow::Borrowed("expected an argument, and it must be a string")
     };
 
-    todo!()
+    match interface.exec(command).await {
+        Ok(response) => {
+            let response = if response.chars().count() > MAXLEN {
+                response
+                    .chars()
+                    .take(MAXLEN - CUTOFF_SUFFIX.len())
+                    .chain(CUTOFF_SUFFIX.chars())
+                    .collect()
+            } else {
+                response
+            };
+            Cow::Owned(format!("Success:\n```\n{response}\n```"))
+        }
+        Err(rcon::Error::Auth) => Cow::Borrowed("Invalid authentication (check bot config)."),
+        Err(rcon::Error::CommandTooLong) => Cow::Borrowed("Command too long."),
+        Err(rcon::Error::Io(..)) => Cow::Borrowed("The server is closed."),
+    }
 }
 
 pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
