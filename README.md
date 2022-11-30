@@ -17,6 +17,8 @@ The default port that comes with every server is 25575 (this is specified in `se
 full address would be `127.0.0.1:25575`.
 - `RCON_PASS`: The RCON password as configured in `server.properties`.
 - `DISCORD_TOKEN`: The token of your discord bot.
+- `LIST_CHANNEL_ID`: The ID of the channel where the self-updating `list` message is going to be. This should be a dedicated channel
+for the bot.
 
 Here's an example shell script similar to the one that I use:
 ```sh
@@ -26,6 +28,7 @@ OP_ROLE_ID="<insert op role id here>" \
 RCON_ADDR="127.0.0.1:25575" \
 RCON_PASS="<insert rcon password here>" \
 DISCORD_TOKEN="<insert discord bot token here>" \
+LIST_CHANNEL_ID="<insert list channel id here>" \
 \
 ./ferrisquery
 ```
