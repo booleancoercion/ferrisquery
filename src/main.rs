@@ -225,7 +225,7 @@ async fn main() {
     LIST_REGEX
         .set(
             Regex::new(
-                r"^There are (\d+) of a max of (\d+) players online:(?: (?:(\w+), )*(\w+))$",
+                r"^There are (\d+) of a max of (\d+) players online:(?: (?:(\w+), )*(\w+))?$",
             )
             .unwrap(),
         )
