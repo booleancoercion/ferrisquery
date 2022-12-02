@@ -115,7 +115,8 @@ impl EventHandler for Handler {
                 let online_players: i32 = captures.next().unwrap().parse().unwrap();
                 let max_players: i32 = captures.next().unwrap().parse().unwrap();
 
-                let mut players: Vec<&str> = captures.collect();
+                let mut players: Vec<&str> =
+                    captures.next().unwrap_or_default().split(", ").collect();
                 players.sort_unstable();
 
                 let text = format!(
@@ -224,10 +225,8 @@ async fn main() {
 
     LIST_REGEX
         .set(
-            Regex::new(
-                r"^There are (\d+) of a max of (\d+) players online:(?: (?:(\w+), )*(\w+))?$",
-            )
-            .unwrap(),
+            Regex::new(r"^There are (\d+) of a max of (\d+) players online:(?: ((?:\w+, )*\w+))?$")
+                .unwrap(),
         )
         .unwrap();
 
