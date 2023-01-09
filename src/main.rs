@@ -24,6 +24,7 @@ struct Handler {
     op_role_id: RoleId,
     list_channel_id: ChannelId,
     cache: Arc<Mutex<Option<Cache>>>,
+    restart_scheduled: Arc<Mutex<bool>>,
 }
 
 impl Handler {
@@ -41,6 +42,7 @@ impl Handler {
             op_role_id,
             list_channel_id,
             cache: Arc::new(Mutex::new(cache)),
+            restart_scheduled: Arc::new(Mutex::new(false)),
         }
     }
 }
@@ -64,6 +66,22 @@ impl EventHandler for Handler {
                     }
                 }
                 "source" => Cow::Borrowed("<https://github.com/booleancoercion/ferrisquery>"),
+                "schedule_restart" => {
+                    let Some(member) = &command.member else {
+                        println!("/schedule_restart has been executed outside of a guild!");
+                        return
+                    };
+
+                    if member.roles.contains(&self.op_role_id) {
+                        commands::schedule_restart::run(
+                            &mut *self.restart_scheduled.lock().await,
+                            &command.data.options,
+                        )
+                        .await
+                    } else {
+                        Cow::Borrowed("You're not an op!")
+                    }
+                }
                 _ => Cow::Borrowed("not implemented :("),
             };
 
@@ -85,7 +103,9 @@ impl EventHandler for Handler {
 
         let commands = GuildId::set_application_commands(&self.guild_id, &ctx.http, |commands| {
             commands.create_application_command(|command| commands::run::register(command));
-            commands.create_application_command(|command| commands::source::register(command))
+            commands.create_application_command(|command| commands::source::register(command));
+            commands
+                .create_application_command(|command| commands::schedule_restart::register(command))
         })
         .await;
 
@@ -94,7 +114,7 @@ impl EventHandler for Handler {
             commands
         );
 
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
         let regex = LIST_REGEX.get().unwrap();
         loop {
             interval.tick().await;
@@ -124,9 +144,17 @@ impl EventHandler for Handler {
                 );
 
                 self.set_list_text(&ctx, &text).await;
+
+                // if a restart has been scheduled and there are no players online, do it
+                if online_players == 0 && *self.restart_scheduled.lock().await {
+                    let _ = self.interface.lock().await.exec("stop").await;
+                }
             } else {
                 // if there's an error, it can't be a CommandTooLong. therefore, the server must be offline.
                 self.set_list_text(&ctx, "The server is offline.").await;
+
+                // also clear any scheduled restarts
+                *self.restart_scheduled.lock().await = false;
             }
         }
     }
@@ -196,11 +224,11 @@ struct Cache {
 
 #[tokio::main]
 async fn main() {
-    let addr = env::var("RCON_ADDR").expect("Expected an rcon address in the environment");
-    let password = env::var("RCON_PASS").expect("Expected an rcon password in the environment");
+    let addr = env::var("RCON_ADDR").expect("Expected RCON_ADDR in the environment");
+    let password = env::var("RCON_PASS").expect("Expected RCON_PASS in the environment");
 
     // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let token = env::var("DISCORD_TOKEN").expect("Expected DISCORD_TOKEN in the environment");
 
     let guild_id = GuildId(
         env::var("GUILD_ID")
