@@ -1,5 +1,6 @@
 mod commands;
 mod interface;
+mod server_status;
 
 use std::borrow::Cow;
 use std::env;
@@ -16,6 +17,8 @@ use serenity::model::prelude::*;
 use serenity::prelude::*;
 use tokio::io::AsyncWriteExt;
 
+use crate::server_status::{OnlineServerStatus, ServerStatus};
+
 const CACHE_FILE_NAME: &str = "ferrisquery_cache.toml";
 
 struct Handler {
@@ -25,6 +28,7 @@ struct Handler {
     list_channel_id: ChannelId,
     cache: Arc<Mutex<Option<Cache>>>,
     restart_scheduled: Arc<Mutex<bool>>,
+    has_list_json: bool,
 }
 
 impl Handler {
@@ -35,6 +39,7 @@ impl Handler {
         op_role_id: RoleId,
         list_channel_id: ChannelId,
         cache: Option<Cache>,
+        has_list_json: bool,
     ) -> Self {
         Self {
             interface: Arc::new(Mutex::new(interface::Interface::new(addr, pass))),
@@ -43,6 +48,7 @@ impl Handler {
             list_channel_id,
             cache: Arc::new(Mutex::new(cache)),
             restart_scheduled: Arc::new(Mutex::new(false)),
+            has_list_json,
         }
     }
 }
@@ -115,46 +121,38 @@ impl EventHandler for Handler {
         );
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-        let regex = LIST_REGEX.get().unwrap();
         loop {
             interval.tick().await;
 
-            let list = self.interface.lock().await.exec("list").await;
-            if let Ok(list) = list {
-                let list = list.trim();
-                let Some(captures) = regex.captures(list) else {
-                    self.set_list_text(&ctx, "Regex error (this is a bug)").await;
-                    eprintln!("Regex error. Response from server: {list}");
-                    continue
-                };
+            let status = server_status::get_server_status(
+                &mut *self.interface.lock().await,
+                self.has_list_json,
+            )
+            .await;
 
-                let mut captures = captures.iter().flatten().map(|mat| mat.as_str());
-                captures.next().unwrap(); // this is the entire text, not interesting
+            match status {
+                Ok(status) => {
+                    let ServerStatus::Online(OnlineServerStatus {current_players, max_players, list}) = status else {
+                        self.set_list_text(&ctx, "The server is offline.").await;
 
-                // these unwraps are ok, because we know we're getting a well-formatted response from the server
-                let online_players: i32 = captures.next().unwrap().parse().unwrap();
-                let max_players: i32 = captures.next().unwrap().parse().unwrap();
+                        // also clear any scheduled restarts
+                        *self.restart_scheduled.lock().await = false;
+                        continue;
+                    };
 
-                let mut players: Vec<&str> =
-                    captures.next().unwrap_or_default().split(", ").collect();
-                players.sort_unstable();
+                    let text = format!(
+                        "The server is online. There are {current_players}/{max_players} connected players: ```\n{}```", list.iter().map(|data| &*data.name).collect::<Vec<_>>().join("\n")
+                    );
+                    self.set_list_text(&ctx, &text).await;
 
-                let text = format!(
-                    "The server is online. There are {online_players}/{max_players} connected players: ```\n{}```", players.join("\n")
-                );
-
-                self.set_list_text(&ctx, &text).await;
-
-                // if a restart has been scheduled and there are no players online, do it
-                if online_players == 0 && *self.restart_scheduled.lock().await {
-                    let _ = self.interface.lock().await.exec("stop").await;
+                    // if a restart has been scheduled and there are no players online, do it
+                    if current_players == 0 && *self.restart_scheduled.lock().await {
+                        let _ = self.interface.lock().await.exec("stop").await;
+                    }
                 }
-            } else {
-                // if there's an error, it can't be a CommandTooLong. therefore, the server must be offline.
-                self.set_list_text(&ctx, "The server is offline.").await;
-
-                // also clear any scheduled restarts
-                *self.restart_scheduled.lock().await = false;
+                Err(why) => {
+                    self.set_list_text(&ctx, &why).await;
+                }
             }
         }
     }
@@ -251,6 +249,8 @@ async fn main() {
             .expect("LIST_CHANNEL_ID must be an integer"),
     );
 
+    let has_list_json = env::var("HAS_LIST_JSON").is_ok();
+
     LIST_REGEX
         .set(
             Regex::new(r"^There are (\d+) of a max of (\d+) players online:(?: ((?:\w+, )*\w+))?$")
@@ -281,6 +281,7 @@ async fn main() {
             op_role_id,
             list_channel_id,
             cache,
+            has_list_json,
         ))
         .await
         .expect("Error creating client");
