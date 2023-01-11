@@ -140,10 +140,40 @@ impl EventHandler for Handler {
                         continue;
                     };
 
+                    let regex = TAG_REGEX.get().unwrap();
+                    let naughty_regex = NAUGHTY_REGEX.get().unwrap();
+                    let mut naughty = Vec::new();
+                    let players = list
+                        .iter()
+                        .map(|data| {
+                            if let Some(nick) = &data.nickname {
+                                let nick = regex.replace_all(nick, "");
+                                if naughty_regex.is_match(&nick) {
+                                    naughty.push(&data.name);
+                                    format!("{} ({})", data.name, NAUGHTY_NICKNAME)
+                                } else {
+                                    format!("{} ({})", data.name, nick)
+                                }
+                            } else {
+                                data.name.to_string()
+                            }
+                        })
+                        .collect::<Vec<_>>();
+
                     let text = format!(
-                        "The server is online. There are {current_players}/{max_players} connected players: ```\n{}```", list.iter().map(|data| &*data.name).collect::<Vec<_>>().join("\n")
+                        "The server is online. There are {current_players}/{max_players} connected players: ```\n{}```", players.join("\n")
                     );
                     self.set_list_text(&ctx, &text).await;
+
+                    {
+                        let mut interface = self.interface.lock().await;
+                        for name in naughty {
+                            let _ = interface
+                                .exec(&format!("styled-nicknames set {name} {NAUGHTY_NICKNAME}"))
+                                .await;
+                            let _ = interface.exec(&format!("kick {name} nice try")).await;
+                        }
+                    }
 
                     // if a restart has been scheduled and there are no players online, do it
                     if current_players == 0 && *self.restart_scheduled.lock().await {
@@ -161,6 +191,11 @@ impl EventHandler for Handler {
 impl Handler {
     async fn set_list_text(&self, ctx: &Context, text: &str) {
         let cache = &mut *self.cache.lock().await;
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let text = format!("{text}\n\nLast update: <t:{timestamp}:T>");
 
         if let Some(Cache {
             list_channel_id,
@@ -213,6 +248,9 @@ impl Handler {
 }
 
 static LIST_REGEX: OnceCell<Regex> = OnceCell::new();
+static TAG_REGEX: OnceCell<Regex> = OnceCell::new();
+static NAUGHTY_REGEX: OnceCell<Regex> = OnceCell::new();
+static NAUGHTY_NICKNAME: &str = "I MADE BOOL SAD";
 
 #[derive(Serialize, Deserialize, Copy, Clone)]
 struct Cache {
@@ -255,6 +293,21 @@ async fn main() {
         .set(
             Regex::new(r"^There are (\d+) of a max of (\d+) players online:(?: ((?:\w+, )*\w+))?$")
                 .unwrap(),
+        )
+        .unwrap();
+    TAG_REGEX
+        .set(
+            Regex::new(r"</?(?:color|c|yellow|dark_blue|dark_purple|gold|red|aqua|gray|light_purple|white|dark_gray|green|dark_green|blue|dark_aqua|dark_green|black|gradient|gr|rainbow|rb|reset)(?::[^>]*)?>")
+                .unwrap(),
+        )
+        .unwrap();
+    NAUGHTY_REGEX
+        .set(
+            Regex::new(&format!(
+                r"(?u)`{0}`{0}`|h{0}t{0}t{0}p{0}s?{0}:{0}/{0}/|d{0}i{0}s{0}c{0}o{0}r{0}d{0}\.{0}g{0}g",
+                r"[^\w!-_a-~]*"
+            ))
+            .unwrap(),
         )
         .unwrap();
 
