@@ -7,6 +7,7 @@ use crate::interface::Interface;
 pub struct PlayerData {
     pub name: String,
     pub nickname: Option<String>,
+    pub nickname_styled: Option<azalea_chat::Component>,
     pub uuid: Option<PlayerUuid>,
 }
 
@@ -69,6 +70,7 @@ pub async fn get_server_status(
                     .map(|name| PlayerData {
                         name: name.to_string(),
                         nickname: None,
+                        nickname_styled: None,
                         uuid: None,
                     })
                     .collect(),
@@ -78,4 +80,11 @@ pub async fn get_server_status(
             Ok(ServerStatus::Offline)
         }
     }
+}
+
+#[test]
+fn test() {
+    let list = r##"{"current_players":1,"max_players":8,"list":[{"name":"Player839","nickname":"<rainbow>test","nickname_styled":{"extra":[{"extra":[{"extra":[{"color":"#FF0000","text":"t"},{"color":"#CBFF00","text":"e"},{"color":"#00FF66","text":"s"},{"color":"#0065FF","text":"t"}],"text":""}],"text":""}],"text":"#"},"uuid":"66397f00-f974-3e3d-944b-5f58f7613e27"}]}"##;
+    let status = serde_json::from_str::<OnlineServerStatus>(list).unwrap();
+    assert_eq!(status.list.first().unwrap().nickname_styled.as_ref().unwrap().to_ansi(), "#\u{1b}[38;2;255;0;0mt\u{1b}[38;2;203;255;0me\u{1b}[38;2;0;255;102ms\u{1b}[38;2;0;101;255mt\u{1b}[m");
 }

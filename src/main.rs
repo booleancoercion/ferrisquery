@@ -146,8 +146,16 @@ impl EventHandler for Handler {
                     let players = list
                         .iter()
                         .map(|data| {
-                            if let Some(nick) = &data.nickname {
-                                let nick = regex.replace_all(nick, "");
+                            let nick = data
+                                .nickname_styled
+                                .as_ref()
+                                .map(|nick| nick.to_ansi())
+                                .or_else(|| {
+                                    data.nickname
+                                        .as_ref()
+                                        .map(|nick| regex.replace_all(nick, "").into_owned())
+                                });
+                            if let Some(nick) = nick {
                                 if naughty_regex.is_match(&nick) {
                                     naughty.push(&data.name);
                                     format!("{} ({})", data.name, NAUGHTY_NICKNAME)
@@ -161,7 +169,7 @@ impl EventHandler for Handler {
                         .collect::<Vec<_>>();
 
                     let text = format!(
-                        "The server is online. There are {current_players}/{max_players} connected players: ```\n{}```", players.join("\n")
+                        "The server is online. There are {current_players}/{max_players} connected players: ```ansi\n{}```", players.join("\n")
                     );
                     self.set_list_text(&ctx, &text).await;
 
