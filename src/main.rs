@@ -29,28 +29,7 @@ struct Handler {
     cache: Arc<Mutex<Option<Cache>>>,
     restart_scheduled: Arc<Mutex<bool>>,
     has_list_json: bool,
-}
-
-impl Handler {
-    pub fn new(
-        addr: impl ToString,
-        pass: impl ToString,
-        guild_id: GuildId,
-        op_role_id: RoleId,
-        list_channel_id: ChannelId,
-        cache: Option<Cache>,
-        has_list_json: bool,
-    ) -> Self {
-        Self {
-            interface: Arc::new(Mutex::new(interface::Interface::new(addr, pass))),
-            guild_id,
-            op_role_id,
-            list_channel_id,
-            cache: Arc::new(Mutex::new(cache)),
-            restart_scheduled: Arc::new(Mutex::new(false)),
-            has_list_json,
-        }
-    }
+    server_directory: Box<str>,
 }
 
 #[async_trait]
@@ -88,6 +67,31 @@ impl EventHandler for Handler {
                         Cow::Borrowed("You're not an op!")
                     }
                 }
+                "crash" => match commands::crash::run(&self.server_directory).await {
+                    Ok(file) => {
+                        if let Err(why) = command
+                            .create_interaction_response(&ctx.http, |response| {
+                                response
+                                    .kind(InteractionResponseType::ChannelMessageWithSource)
+                                    .interaction_response_data(|message| {
+                                        message.add_file(&file.0);
+                                        message.content(format!(
+                                            "This file was created <t:{}:R>.",
+                                            file.1
+                                                .duration_since(std::time::UNIX_EPOCH)
+                                                .unwrap()
+                                                .as_secs()
+                                        ))
+                                    })
+                            })
+                            .await
+                        {
+                            println!("Cannot respond to slash command (/crash): {why}");
+                        }
+                        return;
+                    }
+                    Err(msg) => msg,
+                },
                 _ => Cow::Borrowed("not implemented :("),
             };
 
@@ -110,6 +114,7 @@ impl EventHandler for Handler {
         let commands = GuildId::set_application_commands(&self.guild_id, &ctx.http, |commands| {
             commands.create_application_command(|command| commands::run::register(command));
             commands.create_application_command(|command| commands::source::register(command));
+            commands.create_application_command(|command| commands::crash::register(command));
             commands
                 .create_application_command(|command| commands::schedule_restart::register(command))
         })
@@ -289,6 +294,8 @@ async fn main() {
 
     let has_list_json = env::var("HAS_LIST_JSON").is_ok();
 
+    let server_directory = env::var("SERVER_DIR").expect("Expected SERVER_DIR in the environment");
+
     LIST_REGEX
         .set(
             Regex::new(r"^There are (\d+) of a max of (\d+) players online:(?: ((?:\w+, )*\w+))?$")
@@ -327,15 +334,16 @@ async fn main() {
 
     // Build our client.
     let mut client = Client::builder(token, GatewayIntents::empty())
-        .event_handler(Handler::new(
-            addr,
-            password,
+        .event_handler(Handler {
+            interface: Arc::new(Mutex::new(interface::Interface::new(addr, password))),
             guild_id,
             op_role_id,
             list_channel_id,
-            cache,
+            cache: Arc::new(Mutex::new(cache)),
+            restart_scheduled: Arc::new(Mutex::new(false)),
             has_list_json,
-        ))
+            server_directory: server_directory.into_boxed_str(),
+        })
         .await
         .expect("Error creating client");
 
