@@ -51,38 +51,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
-name = "azalea-buf"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec6031972c401255a5ae9038608dacf1eae6b46787433767cd26d7ccf9e93b97"
-dependencies = [
- "azalea-buf-macros",
- "byteorder",
- "log",
- "serde_json",
- "thiserror",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "azalea-buf-macros"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c002b742e4810daeb4eb30970f2c081fc604b3f0a46a2258021dddaaa7e13951"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "azalea-chat"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "723855de866bd8d0d2630973c9dda8b36fd038c69f18ddfe9d1788640409e376"
+source = "git+https://github.com/Nemo157/azalea?branch=chat-optional-mc-buf#b2c2fa073049b2059ea1089e08abedee6315207a"
 dependencies = [
- "azalea-buf",
  "azalea-language",
  "log",
  "once_cell",
@@ -93,8 +65,7 @@ dependencies = [
 [[package]]
 name = "azalea-language"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2746c21432330995acb0bdbd3528bcc35d023784c5769eef3d1a7fc95095ef07"
+source = "git+https://github.com/Nemo157/azalea?branch=chat-optional-mc-buf#b2c2fa073049b2059ea1089e08abedee6315207a"
 dependencies = [
  "once_cell",
  "serde",
