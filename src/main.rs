@@ -4,6 +4,7 @@ mod server_status;
 
 use std::borrow::Cow;
 use std::env;
+use std::fmt::Write;
 use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
@@ -137,7 +138,7 @@ impl EventHandler for Handler {
 
             match status {
                 Ok(status) => {
-                    let ServerStatus::Online(OnlineServerStatus {current_players, max_players, list}) = status else {
+                    let ServerStatus::Online(OnlineServerStatus {current_players, max_players, list, tps}) = status else {
                         self.set_list_text(&ctx, "The server is offline.").await;
 
                         // also clear any scheduled restarts
@@ -165,9 +166,19 @@ impl EventHandler for Handler {
                         })
                         .collect::<Vec<_>>();
 
-                    let text = format!(
-                        "The server is online. There are {current_players}/{max_players} connected players: ```\n{}```", players.join("\n")
+                    let mut text = format!(
+                        "The server is online. There are {current_players}/{max_players} connected players"
                     );
+
+                    if current_players > 0 {
+                        write!(&mut text, ": ```\n{}```", players.join("\n")).unwrap();
+                    } else {
+                        write!(&mut text, ".\n").unwrap();
+                    }
+
+                    if let Some(tps) = tps {
+                        write!(&mut text, "\nTPS info: ```\n5s    10s   1m    5m    15m  \n{:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>5.2}```", tps[0], tps[1], tps[2], tps[3], tps[4]).unwrap();
+                    }
                     self.set_list_text(&ctx, &text).await;
 
                     {

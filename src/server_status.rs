@@ -15,6 +15,7 @@ pub struct OnlineServerStatus {
     pub current_players: i32,
     pub max_players: i32,
     pub list: Vec<PlayerData>,
+    pub tps: Option<[f32; 5]>,
 }
 
 pub enum ServerStatus {
@@ -72,6 +73,7 @@ pub async fn get_server_status(
                         uuid: None,
                     })
                     .collect(),
+                tps: None,
             }))
         } else {
             // if there's an error, it can't be a CommandTooLong. therefore, the server must be offline.
