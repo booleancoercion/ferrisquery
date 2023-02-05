@@ -93,6 +93,21 @@ impl EventHandler for Handler {
                     }
                     Err(msg) => msg,
                 },
+                "whitelist" => {
+                    let Some(member) = &command.member else {
+                        println!("/whitelist has been executed outside of a guild!");
+                        return
+                    };
+
+                    let is_op = member.roles.contains(&self.op_role_id);
+                    commands::whitelist::run(
+                        &self.server_directory,
+                        is_op,
+                        &mut *self.interface.lock().await,
+                        &command.data.options,
+                    )
+                    .await
+                }
                 _ => Cow::Borrowed("not implemented :("),
             };
 
@@ -116,15 +131,13 @@ impl EventHandler for Handler {
             commands.create_application_command(|command| commands::run::register(command));
             commands.create_application_command(|command| commands::source::register(command));
             commands.create_application_command(|command| commands::crash::register(command));
+            commands.create_application_command(|command| commands::whitelist::register(command));
             commands
                 .create_application_command(|command| commands::schedule_restart::register(command))
         })
         .await;
 
-        println!(
-            "I now have the following guild slash commands: {:#?}",
-            commands
-        );
+        println!("I now have the following guild slash commands: {commands:#?}");
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
         loop {
@@ -173,7 +186,7 @@ impl EventHandler for Handler {
                     if current_players > 0 {
                         write!(&mut text, ": ```\n{}```", players.join("\n")).unwrap();
                     } else {
-                        write!(&mut text, ".\n").unwrap();
+                        writeln!(&mut text, ".").unwrap();
                     }
 
                     if let Some(tps) = tps {
@@ -363,6 +376,6 @@ async fn main() {
     // Shards will automatically attempt to reconnect, and will perform
     // exponential backoff until it reconnects.
     if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
+        println!("Client error: {why:?}");
     }
 }

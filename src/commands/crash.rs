@@ -12,7 +12,7 @@ const RATELIMIT: Duration = Duration::from_secs(30);
 
 pub async fn run(server_dir: &str) -> Result<(PathBuf, SystemTime), Cow<'static, str>> {
     let last_used = &mut *LAST_USED
-        .get_or_init(|| Mutex::new(Instant::now() - RATELIMIT * 2))
+        .get_or_init(|| Mutex::new(Instant::now().checked_sub(RATELIMIT * 2).unwrap()))
         .lock()
         .await;
 
