@@ -1,9 +1,9 @@
 mod commands;
+mod env;
 mod interface;
 mod server_status;
 
 use std::borrow::Cow;
-use std::env;
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -289,11 +289,21 @@ struct Cache {
 
 #[tokio::main]
 async fn main() {
-    let addr = env::var("RCON_ADDR").expect("Expected RCON_ADDR in the environment");
-    let password = env::var("RCON_PASS").expect("Expected RCON_PASS in the environment");
+    if env::any_set() {
+        env::assert_env_vars();
+    } else {
+        eprintln!("# Environment Variables Help\n{}", env::gen_help());
+        std::process::exit(1);
+    }
 
-    // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN").expect("Expected DISCORD_TOKEN in the environment");
+    let addr = env::rcon_addr();
+    let password = env::rcon_pass();
+    let token = env::discord_token();
+    let guild_id = GuildId(env::guild_id());
+    let op_role_id = RoleId(env::op_role_id());
+    let list_channel_id = ChannelId(env::list_channel_id());
+    let has_list_json = env::has_list_json().is_some();
+    let server_directory = env::server_directory();
 
     let guild_id = GuildId(
         env::var("GUILD_ID")
