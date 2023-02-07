@@ -1,4 +1,5 @@
 mod commands;
+mod database_api;
 mod env;
 mod interface;
 mod server_status;
@@ -7,6 +8,7 @@ use std::borrow::Cow;
 use std::fmt::Write;
 use std::sync::Arc;
 
+use database_api::MonadApi;
 use once_cell::sync::OnceCell;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -31,6 +33,7 @@ struct Handler {
     restart_scheduled: Arc<Mutex<bool>>,
     has_list_json: bool,
     server_directory: Box<str>,
+    db_api: Option<MonadApi>,
 }
 
 #[async_trait]
@@ -128,12 +131,18 @@ impl EventHandler for Handler {
         println!("{} is connected!", ready.user.name);
 
         let commands = GuildId::set_application_commands(&self.guild_id, &ctx.http, |commands| {
-            commands.create_application_command(|command| commands::run::register(command));
-            commands.create_application_command(|command| commands::source::register(command));
-            commands.create_application_command(|command| commands::crash::register(command));
-            commands.create_application_command(|command| commands::whitelist::register(command));
             commands
+                .create_application_command(|command| commands::run::register(command))
+                .create_application_command(|command| commands::source::register(command))
+                .create_application_command(|command| commands::crash::register(command))
+                .create_application_command(|command| commands::whitelist::register(command))
+                .create_application_command(|command| {
+                    commands::schedule_restart::register(command)
+                });
+
                 .create_application_command(|command| commands::schedule_restart::register(command))
+
+            commands
         })
         .await;
 
@@ -305,30 +314,15 @@ async fn main() {
     let has_list_json = env::has_list_json().is_some();
     let server_directory = env::server_directory();
 
-    let guild_id = GuildId(
-        env::var("GUILD_ID")
-            .expect("Expected GUILD_ID in environment")
-            .parse()
-            .expect("GUILD_ID must be an integer"),
-    );
-
-    let op_role_id = RoleId(
-        env::var("OP_ROLE_ID")
-            .expect("Expected OP_ROLE_ID in environment")
-            .parse()
-            .expect("OP_ROLE_ID must be an integer"),
-    );
-
-    let list_channel_id = ChannelId(
-        env::var("LIST_CHANNEL_ID")
-            .expect("Expected LIST_CHANNEL_ID in environment")
-            .parse()
-            .expect("LIST_CHANNEL_ID must be an integer"),
-    );
-
-    let has_list_json = env::var("HAS_LIST_JSON").is_ok();
-
-    let server_directory = env::var("SERVER_DIR").expect("Expected SERVER_DIR in the environment");
+    let db_api = || -> Option<MonadApi> {
+        Some(MonadApi::new(
+            &env::db_username()?,
+            &env::db_admin_endpoint()?,
+            &env::db_admin_password()?,
+            &env::db_user_endpoint()?,
+            &env::db_user_password()?,
+        ))
+    }();
 
     LIST_REGEX
         .set(
@@ -377,6 +371,7 @@ async fn main() {
             restart_scheduled: Arc::new(Mutex::new(false)),
             has_list_json,
             server_directory: server_directory.into_boxed_str(),
+            db_api,
         })
         .await
         .expect("Error creating client");
