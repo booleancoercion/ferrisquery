@@ -1,6 +1,6 @@
+use poise::serenity_prelude::{UserId, UserIdParseError};
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::{Deserialize, Serialize};
-use serenity::model::prelude::{UserId, UserIdParseError};
 use uuid_mc::PlayerUuid;
 
 #[derive(thiserror::Error, Debug)]

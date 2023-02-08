@@ -4,284 +4,167 @@ mod env;
 mod interface;
 mod server_status;
 
-use std::borrow::Cow;
 use std::fmt::Write;
 use std::sync::Arc;
 
 use database_api::MonadApi;
 use once_cell::sync::OnceCell;
+use poise::serenity_prelude as serenity;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serenity::async_trait;
-use serenity::model::application::interaction::{Interaction, InteractionResponseType};
-use serenity::model::gateway::Ready;
-use serenity::model::id::GuildId;
-use serenity::model::prelude::*;
-use serenity::prelude::*;
+use serenity::{ChannelId, MessageId, RoleId};
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Mutex;
 
 use crate::server_status::{OnlineServerStatus, ServerStatus};
 
 const CACHE_FILE_NAME: &str = "ferrisquery_cache.toml";
 
-struct Handler {
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Context<'a> = poise::Context<'a, Data, Error>;
+
+#[derive(Clone)]
+pub struct Data {
     interface: Arc<Mutex<interface::Interface>>,
-    guild_id: GuildId,
     op_role_id: RoleId,
     list_channel_id: ChannelId,
     cache: Arc<Mutex<Option<Cache>>>,
     restart_scheduled: Arc<Mutex<bool>>,
     has_list_json: bool,
     server_directory: Box<str>,
-    db_api: Option<MonadApi>,
+    db_api: Option<Arc<MonadApi>>,
 }
 
-#[async_trait]
-impl EventHandler for Handler {
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::ApplicationCommand(command) = interaction {
-            let content = match command.data.name.as_str() {
-                "run" => {
-                    let Some(member) = &command.member else {
-                        println!("/run has been executed outside of a guild!");
-                        return
-                    };
+async fn list_updater(data: Data, http: Arc<poise::serenity_prelude::Http>) {
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+    loop {
+        interval.tick().await;
 
-                    if member.roles.contains(&self.op_role_id) {
-                        commands::run::run(&mut *self.interface.lock().await, &command.data.options)
-                            .await
-                    } else {
-                        Cow::Borrowed("You're not an op!")
-                    }
-                }
-                "source" => Cow::Borrowed("<https://github.com/booleancoercion/ferrisquery>"),
-                "schedule_restart" => {
-                    let Some(member) = &command.member else {
-                        println!("/schedule_restart has been executed outside of a guild!");
-                        return
-                    };
+        let status =
+            server_status::get_server_status(&mut *data.interface.lock().await, data.has_list_json)
+                .await;
 
-                    if member.roles.contains(&self.op_role_id) {
-                        commands::schedule_restart::run(
-                            &mut *self.restart_scheduled.lock().await,
-                            &command.data.options,
-                        )
-                        .await
-                    } else {
-                        Cow::Borrowed("You're not an op!")
-                    }
-                }
-                "crash" => match commands::crash::run(&self.server_directory).await {
-                    Ok(file) => {
-                        if let Err(why) = command
-                            .create_interaction_response(&ctx.http, |response| {
-                                response
-                                    .kind(InteractionResponseType::ChannelMessageWithSource)
-                                    .interaction_response_data(|message| {
-                                        message.add_file(&file.0);
-                                        message.content(format!(
-                                            "This file was created <t:{}:R>.",
-                                            file.1
-                                                .duration_since(std::time::UNIX_EPOCH)
-                                                .unwrap()
-                                                .as_secs()
-                                        ))
-                                    })
-                            })
-                            .await
-                        {
-                            println!("Cannot respond to slash command (/crash): {why}");
-                        }
-                        return;
-                    }
-                    Err(msg) => msg,
-                },
-                "whitelist" => {
-                    let Some(member) = &command.member else {
-                        println!("/whitelist has been executed outside of a guild!");
-                        return
-                    };
-
-                    let is_op = member.roles.contains(&self.op_role_id);
-                    commands::whitelist::run(
-                        &self.server_directory,
-                        is_op,
-                        &mut *self.interface.lock().await,
-                        &command.data.options,
-                    )
-                    .await
-                }
-                _ => Cow::Borrowed("not implemented :("),
-            };
-
-            if let Err(why) = command
-                .create_interaction_response(&ctx.http, |response| {
-                    response
-                        .kind(InteractionResponseType::ChannelMessageWithSource)
-                        .interaction_response_data(|message| message.content(content))
-                })
-                .await
-            {
-                println!("Cannot respond to slash command: {why}");
-            }
-        }
-    }
-
-    async fn ready(&self, ctx: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
-
-        let commands = GuildId::set_application_commands(&self.guild_id, &ctx.http, |commands| {
-            commands
-                .create_application_command(|command| commands::run::register(command))
-                .create_application_command(|command| commands::source::register(command))
-                .create_application_command(|command| commands::crash::register(command))
-                .create_application_command(|command| commands::whitelist::register(command))
-                .create_application_command(|command| {
-                    commands::schedule_restart::register(command)
-                });
-
-                .create_application_command(|command| commands::schedule_restart::register(command))
-
-            commands
-        })
-        .await;
-
-        println!("I now have the following guild slash commands: {commands:#?}");
-
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-
-            let status = server_status::get_server_status(
-                &mut *self.interface.lock().await,
-                self.has_list_json,
-            )
-            .await;
-
-            match status {
-                Ok(status) => {
-                    let ServerStatus::Online(OnlineServerStatus {current_players, max_players, list, tps}) = status else {
-                        self.set_list_text(&ctx, "The server is offline.").await;
+        match status {
+            Ok(status) => {
+                let ServerStatus::Online(OnlineServerStatus {current_players, max_players, list, tps}) = status else {
+                        set_list_text(&data, &http, "The server is offline.").await;
 
                         // also clear any scheduled restarts
-                        *self.restart_scheduled.lock().await = false;
+                        *data.restart_scheduled.lock().await = false;
                         continue;
                     };
 
-                    let regex = TAG_REGEX.get().unwrap();
-                    let naughty_regex = NAUGHTY_REGEX.get().unwrap();
-                    let mut naughty = Vec::new();
-                    let players = list
-                        .iter()
-                        .map(|data| {
-                            if let Some(nick) = &data.nickname {
-                                let nick = regex.replace_all(nick, "");
-                                if naughty_regex.is_match(&nick) {
-                                    naughty.push(&data.name);
-                                    format!("{} ({})", data.name, NAUGHTY_NICKNAME)
-                                } else {
-                                    format!("{} ({})", data.name, nick)
-                                }
+                let regex = TAG_REGEX.get().unwrap();
+                let naughty_regex = NAUGHTY_REGEX.get().unwrap();
+                let mut naughty = Vec::new();
+                let players = list
+                    .iter()
+                    .map(|data| {
+                        if let Some(nick) = &data.nickname {
+                            let nick = regex.replace_all(nick, "");
+                            if naughty_regex.is_match(&nick) {
+                                naughty.push(&data.name);
+                                format!("{} ({})", data.name, NAUGHTY_NICKNAME)
                             } else {
-                                data.name.to_string()
+                                format!("{} ({})", data.name, nick)
                             }
-                        })
-                        .collect::<Vec<_>>();
+                        } else {
+                            data.name.to_string()
+                        }
+                    })
+                    .collect::<Vec<_>>();
 
-                    let mut text = format!(
+                let mut text = format!(
                         "The server is online. There are {current_players}/{max_players} connected players"
                     );
 
-                    if current_players > 0 {
-                        write!(&mut text, ": ```\n{}```", players.join("\n")).unwrap();
-                    } else {
-                        writeln!(&mut text, ".").unwrap();
-                    }
+                if current_players > 0 {
+                    write!(&mut text, ": ```\n{}```", players.join("\n")).unwrap();
+                } else {
+                    writeln!(&mut text, ".").unwrap();
+                }
 
-                    if let Some(tps) = tps {
-                        write!(&mut text, "\nTPS info: ```\n5s    10s   1m    5m    15m  \n{:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>5.2}```", tps[0], tps[1], tps[2], tps[3], tps[4]).unwrap();
-                    }
-                    self.set_list_text(&ctx, &text).await;
+                if let Some(tps) = tps {
+                    write!(&mut text, "\nTPS info: ```\n5s    10s   1m    5m    15m  \n{:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>5.2}```", tps[0], tps[1], tps[2], tps[3], tps[4]).unwrap();
+                }
+                set_list_text(&data, &http, &text).await;
 
-                    {
-                        let mut interface = self.interface.lock().await;
-                        for name in naughty {
-                            let _ = interface
-                                .exec(&format!("styled-nicknames set {name} {NAUGHTY_NICKNAME}"))
-                                .await;
-                            let _ = interface.exec(&format!("kick {name} nice try")).await;
-                        }
-                    }
-
-                    // if a restart has been scheduled and there are no players online, do it
-                    if current_players == 0 && *self.restart_scheduled.lock().await {
-                        let _ = self.interface.lock().await.exec("stop").await;
+                {
+                    let mut interface = data.interface.lock().await;
+                    for name in naughty {
+                        let _ = interface
+                            .exec(&format!("styled-nicknames set {name} {NAUGHTY_NICKNAME}"))
+                            .await;
+                        let _ = interface.exec(&format!("kick {name} nice try")).await;
                     }
                 }
-                Err(why) => {
-                    self.set_list_text(&ctx, &why).await;
+
+                // if a restart has been scheduled and there are no players online, do it
+                if current_players == 0 && *data.restart_scheduled.lock().await {
+                    let _ = data.interface.lock().await.exec("stop").await;
                 }
+            }
+            Err(why) => {
+                set_list_text(&data, &http, &why).await;
             }
         }
     }
 }
 
-impl Handler {
-    async fn set_list_text(&self, ctx: &Context, text: &str) {
-        let cache = &mut *self.cache.lock().await;
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let text = format!("{text}\n\nLast update: <t:{timestamp}:T>");
+async fn set_list_text(data: &Data, http: &poise::serenity_prelude::Http, text: &str) {
+    let cache = &mut *data.cache.lock().await;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let text = format!("{text}\n\nLast update: <t:{timestamp}:T>");
 
-        if let Some(Cache {
-            list_channel_id,
-            list_message_id,
-        }) = *cache
+    if let Some(Cache {
+        list_channel_id,
+        list_message_id,
+    }) = *cache
+    {
+        if let Err(why) = list_channel_id
+            .edit_message(http, list_message_id, |m| m.content(text))
+            .await
         {
-            if let Err(why) = list_channel_id
-                .edit_message(&ctx.http, list_message_id, |m| m.content(text))
-                .await
-            {
-                eprintln!("Couldn't edit list message: {why}")
-            }
-        } else {
-            let message = match self
-                .list_channel_id
-                .send_message(&ctx.http, |m| m.content(text))
-                .await
-            {
-                Ok(message) => message,
-                Err(why) => {
-                    eprintln!("Couldn't send list message: {why}");
-                    return;
-                }
-            };
-
-            *cache = Some(Cache {
-                list_channel_id: self.list_channel_id,
-                list_message_id: message.id,
-            });
-
-            let mut file = match tokio::fs::OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(CACHE_FILE_NAME)
-                .await
-            {
-                Ok(file) => file,
-                Err(why) => {
-                    eprintln!("Couldn't save cache file: {why}");
-                    return;
-                }
-            };
-
-            file.write_all(toml::to_string_pretty(cache).unwrap().as_bytes())
-                .await
-                .unwrap();
+            eprintln!("Couldn't edit list message: {why}")
         }
+    } else {
+        let message = match data
+            .list_channel_id
+            .send_message(http, |m| m.content(text))
+            .await
+        {
+            Ok(message) => message,
+            Err(why) => {
+                eprintln!("Couldn't send list message: {why}");
+                return;
+            }
+        };
+
+        *cache = Some(Cache {
+            list_channel_id: data.list_channel_id,
+            list_message_id: message.id,
+        });
+
+        let mut file = match tokio::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(CACHE_FILE_NAME)
+            .await
+        {
+            Ok(file) => file,
+            Err(why) => {
+                eprintln!("Couldn't save cache file: {why}");
+                return;
+            }
+        };
+
+        file.write_all(toml::to_string_pretty(cache).unwrap().as_bytes())
+            .await
+            .unwrap();
     }
 }
 
@@ -298,6 +181,8 @@ struct Cache {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     if env::any_set() {
         env::assert_env_vars();
     } else {
@@ -308,7 +193,6 @@ async fn main() {
     let addr = env::rcon_addr();
     let password = env::rcon_pass();
     let token = env::discord_token();
-    let guild_id = GuildId(env::guild_id());
     let op_role_id = RoleId(env::op_role_id());
     let list_channel_id = ChannelId(env::list_channel_id());
     let has_list_json = env::has_list_json().is_some();
@@ -360,27 +244,43 @@ async fn main() {
         }
     }
 
-    // Build our client.
-    let mut client = Client::builder(token, GatewayIntents::empty())
-        .event_handler(Handler {
-            interface: Arc::new(Mutex::new(interface::Interface::new(addr, password))),
-            guild_id,
-            op_role_id,
-            list_channel_id,
-            cache: Arc::new(Mutex::new(cache)),
-            restart_scheduled: Arc::new(Mutex::new(false)),
-            has_list_json,
-            server_directory: server_directory.into_boxed_str(),
-            db_api,
+    poise::Framework::builder()
+        .token(token)
+        .options(poise::FrameworkOptions {
+            commands: vec![
+                commands::source(),
+                commands::schedule_restart(),
+                commands::run(),
+                commands::crash(),
+                commands::whitelist(),
+            ],
+            ..Default::default()
         })
-        .await
-        .expect("Error creating client");
+        .setup(move |ctx, _ready, framework| {
+            Box::pin(async move {
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
 
-    // Finally, start a single shard, and start listening to events.
-    //
-    // Shards will automatically attempt to reconnect, and will perform
-    // exponential backoff until it reconnects.
-    if let Err(why) = client.start().await {
-        println!("Client error: {why:?}");
-    }
+                let data = Data {
+                    interface: Arc::new(Mutex::new(interface::Interface::new(addr, password))),
+                    op_role_id,
+                    list_channel_id,
+                    cache: Arc::new(Mutex::new(cache)),
+                    restart_scheduled: Arc::new(Mutex::new(false)),
+                    has_list_json,
+                    server_directory: server_directory.into_boxed_str(),
+                    db_api: db_api.map(Arc::new),
+                };
+
+                let _data = data.clone();
+                let _http = Arc::clone(&ctx.http);
+
+                tokio::spawn(async move { list_updater(_data, _http).await });
+
+                Ok(data)
+            })
+        })
+        .intents(poise::serenity_prelude::GatewayIntents::non_privileged())
+        .run()
+        .await
+        .unwrap();
 }

@@ -11,10 +11,7 @@ require_envs! {
     discord_token, "DISCORD_TOKEN", String,
     "DISCORD_TOKEN should be set to the discord bot token.";
 
-    guild_id, "GUILD_ID", u64,
-    "GUILD_ID should be set to the id of the discord server where the bot will operate.";
-
-    op_role_id, "OP_ROLD_ID", u64,
+    op_role_id, "OP_ROLE_ID", u64,
     "OP_ROLE_ID should be set to the id for the role that is assigned to server operators.";
 
     list_channel_id, "LIST_CHANNEL_ID", u64,

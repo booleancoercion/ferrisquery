@@ -1,7 +1,9 @@
-use serenity::builder::CreateApplicationCommand;
+use crate::{Context, Error};
 
-pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
-    command
-        .name("source")
-        .description("Get a link to the bot's source code.")
+/// Get a link to the bot's source code.
+#[poise::command(slash_command)]
+pub async fn source(ctx: Context<'_>) -> Result<(), Error> {
+    ctx.say("<https://github.com/booleancoercion/ferrisquery>")
+        .await?;
+    Ok(())
 }

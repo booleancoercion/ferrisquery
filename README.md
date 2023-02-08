@@ -10,8 +10,7 @@ Either clone this repo and run `cargo build --release` (requires cargo and rustc
 
 ## Configuration
 The following environment variables must be set before running the bot:
-- `GUILD_ID`: The ID of the guild it will be interacting with.
-- `OP_ROLE_ID`: The ID of the discord roles which is given to server operators (users without said role will not be allowed to run commands).
+- `OP_ROLE_ID`: The ID of the discord role which is given to server operators (users without said role will not be allowed to run commands).
 - `RCON_ADDR`: The address and port of your server. Use the IP `127.0.0.1` if running locally (recommended).  
 The default port that comes with every server is 25575 (this is specified in `server.properties`), therefore when using the IP above the
 full address would be `127.0.0.1:25575`.
@@ -24,7 +23,6 @@ for the bot.
 Here's an example shell script similar to the one that I use:
 ```sh
 #!/bin/sh
-GUILD_ID="<insert guild id here>" \
 OP_ROLE_ID="<insert op role id here>" \
 RCON_ADDR="127.0.0.1:25575" \
 RCON_PASS="<insert rcon password here>" \

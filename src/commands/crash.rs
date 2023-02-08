@@ -1,43 +1,31 @@
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::SystemTime;
 
-use once_cell::sync::OnceCell;
-use serenity::builder::CreateApplicationCommand;
+use poise::serenity_prelude::AttachmentType;
 use tokio::fs;
-use tokio::sync::Mutex;
 
-static LAST_USED: OnceCell<Mutex<Instant>> = OnceCell::new();
-const RATELIMIT: Duration = Duration::from_secs(30);
+use crate::{Context, Error};
 
-pub async fn run(server_dir: &str) -> Result<(PathBuf, SystemTime), Cow<'static, str>> {
-    let last_used = &mut *LAST_USED
-        .get_or_init(|| Mutex::new(Instant::now().checked_sub(RATELIMIT * 2).unwrap()))
-        .lock()
-        .await;
+/// Upload the latest crash report.
+#[poise::command(slash_command, global_cooldown = 30)]
+pub async fn crash(ctx: Context<'_>) -> Result<(), Error> {
+    let mut path = PathBuf::from(&*ctx.data().server_directory);
+    path.push("crash-reports");
 
-    let elapsed = last_used.elapsed();
-    if elapsed < RATELIMIT {
-        Err(format!(
-            "Please wait at least {:.5} more seconds before using this command again.",
-            (RATELIMIT - elapsed).as_secs_f64()
-        )
-        .into())
-    } else {
-        let mut path = PathBuf::from(server_dir);
-        path.push("crash-reports");
+    let (file, created) = get_latest_file(path).await?;
+    let created = created
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
 
-        match get_latest_file(path).await {
-            Ok(file) => {
-                *last_used = Instant::now();
-                Ok(file)
-            }
-            Err(err) => {
-                eprintln!("/crash failed with error: {err:?}");
-                Err("Could not read crash log file.".into())
-            }
-        }
-    }
+    ctx.send(|reply| {
+        reply
+            .attachment(AttachmentType::Path(&file))
+            .content(format!("This file was created <t:{created}:R>.",))
+    })
+    .await?;
+
+    Ok(())
 }
 
 async fn get_latest_file(
@@ -57,10 +45,4 @@ async fn get_latest_file(
     entries.sort_unstable_by_key(|(_, created)| std::cmp::Reverse(*created));
 
     Ok((entries[0].0.path(), entries[0].1))
-}
-
-pub fn register(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
-    command
-        .name("crash")
-        .description("Upload the latest crash report.")
 }
