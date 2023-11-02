@@ -35,6 +35,21 @@ pub struct Data {
     db_api: Option<Arc<MonadApi>>,
 }
 
+async fn on_error<U>(
+    error: poise::FrameworkError<'_, U, Error>,
+) -> Result<(), poise::serenity_prelude::Error> {
+    match &error {
+        poise::FrameworkError::Command { error, ctx } => {
+            let simple = error.to_string();
+            ctx.say(simple).await?;
+
+            log::warn!("Command error: {error:?}");
+            Ok(())
+        }
+        _ => poise::builtins::on_error(error).await,
+    }
+}
+
 async fn list_updater(data: Data, http: Arc<poise::serenity_prelude::Http>) {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
     loop {
@@ -252,8 +267,16 @@ async fn main() {
                 commands::schedule_restart(),
                 commands::run(),
                 commands::crash(),
+                commands::user_db(),
                 commands::whitelist(),
             ],
+            on_error: |error| {
+                Box::pin(async move {
+                    if let Err(e) = on_error(error).await {
+                        log::error!("Error while handling error: {}", e);
+                    }
+                })
+            },
             ..Default::default()
         })
         .setup(move |ctx, _ready, framework| {

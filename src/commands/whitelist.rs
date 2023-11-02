@@ -43,7 +43,6 @@ async fn save_whitelist(ctx: &Context<'_>, whitelist: &[WhitelistEntry<'_>]) -> 
     Ok(())
 }
 
-/// Make changes to the whitelist that also modify related data, like the user database.
 #[poise::command(slash_command, subcommands("add", "remove", "list"))]
 pub async fn whitelist(_: Context<'_>) -> Result<(), Error> {
     Ok(())
@@ -53,9 +52,11 @@ pub async fn whitelist(_: Context<'_>) -> Result<(), Error> {
 #[poise::command(slash_command, guild_only, check = "super::operator_only")]
 async fn add(
     ctx: Context<'_>,
-    #[description = "The user to be added."] username: String,
+    #[description = "The minecraft user to be added."] username: String,
+    #[description = "The associated discord user."] discord: poise::serenity_prelude::User,
     #[description = "Whether the user uses online or offline mode."] mode: super::OfflineOnline,
 ) -> Result<(), Error> {
+    let db_api = ctx.data().db_api.as_ref();
     let mut whitelist = get_whitelist(&ctx.data().server_directory).await?;
     if whitelist.iter().any(|entry| entry.name == username) {
         ctx.say(format!("The user {username} is already in the whitelist."))
@@ -63,49 +64,61 @@ async fn add(
         return Ok(());
     }
 
-    let _username = username.clone();
-    let uuid = match mode {
-        super::OfflineOnline::Online => {
-            tokio::task::spawn_blocking(move || PlayerUuid::new_with_online_username(&_username))
-                .await
-                .unwrap()?
-        }
-        super::OfflineOnline::Offline => PlayerUuid::new_with_offline_username(&_username),
-    };
+    let uuid = super::get_uuid(&username, mode).await?;
 
     whitelist.push(WhitelistEntry {
         name: username.as_str().into(),
         uuid,
     });
-
     save_whitelist(&ctx, &whitelist).await?;
-    ctx.say(format!("Player {username} added to the whitelist."))
-        .await?;
 
-    Ok(())
+    let db_result = if let Some(db_api) = db_api {
+        db_api
+            .insert_user_with_name(discord.id, &username, mode.is_online())
+            .await
+    } else {
+        Ok(())
+    };
+
+    let mut output = format!("Player {username} added to the whitelist.");
+    if db_result.is_err() {
+        output += "\nDB Error - see log for details.";
+    }
+
+    ctx.say(output).await?;
+
+    Ok(db_result?)
 }
 
-/// Remove a player from the whitelist.
+/// Remove a user from the whitelist using their minecraft username.
 #[poise::command(slash_command, guild_only, check = "super::operator_only")]
-async fn remove(
-    ctx: Context<'_>,
-    #[description = "The user to be removed."] username: String,
-) -> Result<(), Error> {
+async fn remove(ctx: Context<'_>, username: String) -> Result<(), Error> {
+    let db_api = ctx.data().db_api.as_ref();
     let mut whitelist = get_whitelist(&ctx.data().server_directory).await?;
 
-    let len = whitelist.len();
-    whitelist.retain(|entry| entry.name != username);
-    if whitelist.len() >= len {
+    let entry = whitelist.iter().find(|entry| entry.name == username);
+    let Some(entry) = entry else {
         ctx.say(format!("The player {username} is not in the whitelist."))
             .await?;
         return Ok(());
-    }
+    };
+    let uuid = entry.uuid;
+    whitelist.retain(|entry| entry.name != username);
 
     save_whitelist(&ctx, &whitelist).await?;
-    ctx.say(format!("Player {username} removed from the whitelist."))
-        .await?;
 
-    Ok(())
+    let db_result = if let Some(db_api) = db_api {
+        db_api.delete_user_with_minecraft(uuid).await
+    } else {
+        Ok(())
+    };
+    let mut output = format!("Player {username} removed from the whitelist.");
+    if db_result.is_err() {
+        output += "\nDB Error - see log for details.";
+    }
+    ctx.say(output).await?;
+
+    Ok(db_result?)
 }
 
 /// Return the list of whitelisted players.

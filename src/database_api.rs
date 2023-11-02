@@ -82,6 +82,34 @@ impl TryFrom<_User> for User {
     }
 }
 
+impl User {
+    pub fn pretty_string(&self) -> String {
+        let mc_users: Vec<String> = self
+            .mc_users
+            .iter()
+            .map(|user| {
+                let name = user.name.as_deref().unwrap_or("??? (no name available)");
+                let uuid = user.uuid;
+                format!(
+                    r#"{} - online? {} - "{name}""#,
+                    uuid.as_uuid(),
+                    if uuid.online().is_some() {
+                        '✅'
+                    } else {
+                        '❎'
+                    }
+                )
+            })
+            .collect();
+
+        format!(
+            "Discord user:\n<@{}>\n\nMinecraft Users: (one per row)```\n{}\n```",
+            self.discord_id,
+            mc_users.join("\n")
+        )
+    }
+}
+
 pub struct MonadApi {
     username: Box<str>,
     admin_endpoint: Box<str>,
@@ -228,9 +256,10 @@ impl MonadApi {
         }
     }
 
-    pub async fn get_users_with_discord(&self, discord_id: UserId) -> Result<Vec<MCUser>, Error> {
-        let user = self.get_user_discord(&discord_id.to_string()).await?;
-        user.mc.into_iter().map(TryInto::try_into).collect()
+    pub async fn get_users_with_discord(&self, discord_id: UserId) -> Result<User, Error> {
+        self.get_user_discord(&discord_id.to_string())
+            .await
+            .and_then(TryInto::try_into)
     }
 
     async fn get_user_minecraft(&self, user_id: &str) -> Result<_User, Error> {

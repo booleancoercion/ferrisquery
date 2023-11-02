@@ -375,6 +375,7 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "itertools",
+ "log",
  "menv",
  "once_cell",
  "poise",
