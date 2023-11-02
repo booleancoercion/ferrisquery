@@ -158,7 +158,7 @@ impl MonadApi {
             .await?;
 
         if response.status().is_success() {
-            Ok(response.json().await?)
+            Ok(())
         } else {
             Err(Error::Unsuccessful(response))
         }
