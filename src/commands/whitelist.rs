@@ -4,7 +4,7 @@ use std::fmt::Write;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
-use uuid_mc::PlayerUuid;
+use uuid_mc::{PlayerUuid, Uuid};
 
 use crate::{Context, Error};
 
@@ -90,19 +90,30 @@ async fn add(
     Ok(db_result?)
 }
 
-/// Remove a user from the whitelist using their minecraft username.
-#[poise::command(slash_command, guild_only, check = "super::operator_only")]
-async fn remove(ctx: Context<'_>, username: String) -> Result<(), Error> {
+#[poise::command(
+    slash_command,
+    subcommands("remove_with_mc_username", "remove_with_mc_uuid")
+)]
+async fn remove(_: Context<'_>) -> Result<(), Error> {
+    Ok(())
+}
+
+async fn remove_mc_inner<'a>(
+    ctx: Context<'_>,
+    condition: impl Fn(&WhitelistEntry) -> bool,
+) -> Result<(), Error> {
     let db_api = ctx.data().db_api.as_ref();
     let mut whitelist = get_whitelist(&ctx.data().server_directory).await?;
 
-    let entry = whitelist.iter().find(|entry| entry.name == username);
+    let entry = whitelist.iter().find(|entry| condition(entry));
     let Some(entry) = entry else {
-        ctx.say(format!("The player {username} is not in the whitelist."))
-            .await?;
+        ctx.say("That user is not in the whitelist.").await?;
         return Ok(());
     };
+
+    let username = entry.name.clone();
     let uuid = entry.uuid;
+
     whitelist.retain(|entry| entry.name != username);
 
     save_whitelist(&ctx, &whitelist).await?;
@@ -119,6 +130,31 @@ async fn remove(ctx: Context<'_>, username: String) -> Result<(), Error> {
     ctx.say(output).await?;
 
     Ok(db_result?)
+}
+
+/// Remove a user from the whitelist using their minecraft username.
+#[poise::command(
+    slash_command,
+    guild_only,
+    check = "super::operator_only",
+    rename = "with_mc_username"
+)]
+async fn remove_with_mc_username(ctx: Context<'_>, username: String) -> Result<(), Error> {
+    remove_mc_inner(ctx, |entry| entry.name == username).await
+}
+
+#[poise::command(
+    slash_command,
+    guild_only,
+    check = "super::operator_only",
+    rename = "with_mc_uuid"
+)]
+async fn remove_with_mc_uuid(ctx: Context<'_>, uuid: String) -> Result<(), Error> {
+    let Ok(Ok(uuid)) = Uuid::try_parse(&uuid).map(PlayerUuid::new_with_uuid) else {
+        ctx.say("The provided UUID is invalid.").await?;
+        return Ok(());
+    };
+    remove_mc_inner(ctx, |entry| entry.uuid == uuid).await
 }
 
 /// Return the list of whitelisted players.
