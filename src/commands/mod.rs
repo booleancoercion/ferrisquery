@@ -42,7 +42,7 @@ async fn get_uuid(mc_username: &str, mode: OfflineOnline) -> Result<PlayerUuid, 
     }
 }
 
-#[derive(poise::ChoiceParameter, Copy, Clone, Debug)]
+#[derive(poise::ChoiceParameter, Copy, Clone, Debug, PartialEq, Eq)]
 enum OfflineOnline {
     Offline,
     Online,

@@ -3,6 +3,7 @@ use std::fmt::Write;
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use uuid_mc::{PlayerUuid, Uuid};
 
@@ -43,6 +44,32 @@ async fn save_whitelist(ctx: &Context<'_>, whitelist: &[WhitelistEntry<'_>]) -> 
     Ok(())
 }
 
+async fn get_easyauth_config(server_directory: &str) -> Result<Value, Error> {
+    let filename = format!("{server_directory}/mods/EasyAuth/config.json");
+    let raw_json = tokio::fs::read_to_string(&filename).await?;
+
+    Ok(serde_json::from_str(&raw_json)?)
+}
+
+async fn save_easyauth_config(ctx: &Context<'_>, config: &Value) -> Result<(), Error> {
+    let filename = format!("{}/mods/EasyAuth/config.json", ctx.data().server_directory);
+
+    let raw_json = serde_json::to_string_pretty(config).unwrap(); // this serialization cannot fail
+    let mut file = tokio::fs::OpenOptions::new()
+        .truncate(true)
+        .write(true)
+        .open(&filename)
+        .await?;
+    file.write_all(raw_json.as_bytes()).await?;
+
+    // we don't care if the command succeeds, because then that means the server
+    // is offline and so the whitelist will be reloaded anyway when it comes online.
+    let mut interface = ctx.data().interface.lock().await;
+    let _ = interface.exec("auth reload").await;
+
+    Ok(())
+}
+
 #[poise::command(slash_command, subcommands("add", "remove", "list"))]
 pub async fn whitelist(_: Context<'_>) -> Result<(), Error> {
     Ok(())
@@ -57,6 +84,8 @@ async fn add(
     #[description = "Whether the user uses online or offline mode."] mode: super::OfflineOnline,
 ) -> Result<(), Error> {
     let db_api = ctx.data().db_api.as_ref();
+
+    // Adding to the whitelist file
     let mut whitelist = get_whitelist(&ctx.data().server_directory).await?;
     if whitelist.iter().any(|entry| entry.name == username) {
         ctx.say(format!("The user {username} is already in the whitelist."))
@@ -72,6 +101,30 @@ async fn add(
     });
     save_whitelist(&ctx, &whitelist).await?;
 
+    // Modifying the EasyAuth config, if necessary
+    if ctx.data().has_easyauth && mode == super::OfflineOnline::Offline {
+        let mut config = get_easyauth_config(&ctx.data().server_directory).await?;
+        let Some(forced_offline_players) = config
+            .get_mut("main")
+            .and_then(|x| x.get_mut("forcedOfflinePlayers"))
+            .and_then(Value::as_array_mut)
+        else {
+            return Err("couldn't get the forcedOfflinePlayers entry".into());
+        };
+
+        let lowercase_username = username.to_lowercase();
+
+        if forced_offline_players
+            .iter()
+            .all(|v| v.as_str().unwrap() != lowercase_username)
+        {
+            forced_offline_players.push(Value::String(lowercase_username))
+        }
+
+        save_easyauth_config(&ctx, &config).await?;
+    }
+
+    // Saving to monad's database
     let db_result = if let Some(db_api) = db_api {
         db_api
             .insert_user_with_name(discord.id, &username, mode.is_online())
@@ -103,8 +156,9 @@ async fn remove_mc_inner<'a>(
     condition: impl Fn(&WhitelistEntry) -> bool,
 ) -> Result<(), Error> {
     let db_api = ctx.data().db_api.as_ref();
-    let mut whitelist = get_whitelist(&ctx.data().server_directory).await?;
 
+    // Removing from the whitelist file
+    let mut whitelist = get_whitelist(&ctx.data().server_directory).await?;
     let entry = whitelist.iter().find(|entry| condition(entry));
     let Some(entry) = entry else {
         ctx.say("That user is not in the whitelist.").await?;
@@ -118,6 +172,24 @@ async fn remove_mc_inner<'a>(
 
     save_whitelist(&ctx, &whitelist).await?;
 
+    // Removign from the EasyAuth config, if necessary
+    if ctx.data().has_easyauth && uuid.offline().is_some() {
+        let mut config = get_easyauth_config(&ctx.data().server_directory).await?;
+        let Some(forced_offline_players) = config
+            .get_mut("main")
+            .and_then(|x| x.get_mut("forcedOfflinePlayers"))
+            .and_then(Value::as_array_mut)
+        else {
+            return Err("couldn't get the forcedOfflinePlayers entry".into());
+        };
+
+        let lowercase_username = username.to_lowercase();
+        forced_offline_players.retain(|v| v.as_str().unwrap() != lowercase_username);
+
+        save_easyauth_config(&ctx, &config).await?;
+    }
+
+    // Removing from monad's database
     let db_result = if let Some(db_api) = db_api {
         db_api.delete_user_with_minecraft(uuid).await
     } else {

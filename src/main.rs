@@ -31,6 +31,7 @@ pub struct Data {
     cache: Arc<Mutex<Option<Cache>>>,
     restart_scheduled: Arc<Mutex<bool>>,
     has_list_json: bool,
+    has_easyauth: bool,
     server_directory: Box<str>,
     db_api: Option<Arc<MonadApi>>,
 }
@@ -61,13 +62,19 @@ async fn list_updater(data: Data, http: Arc<poise::serenity_prelude::Http>) {
 
         match status {
             Ok(status) => {
-                let ServerStatus::Online(OnlineServerStatus {current_players, max_players, list, tps}) = status else {
-                        set_list_text(&data, &http, "The server is offline.").await;
+                let ServerStatus::Online(OnlineServerStatus {
+                    current_players,
+                    max_players,
+                    list,
+                    tps,
+                }) = status
+                else {
+                    set_list_text(&data, &http, "The server is offline.").await;
 
-                        // also clear any scheduled restarts
-                        *data.restart_scheduled.lock().await = false;
-                        continue;
-                    };
+                    // also clear any scheduled restarts
+                    *data.restart_scheduled.lock().await = false;
+                    continue;
+                };
 
                 let regex = TAG_REGEX.get().unwrap();
                 let naughty_regex = NAUGHTY_REGEX.get().unwrap();
@@ -211,6 +218,7 @@ async fn main() {
     let op_role_id = RoleId(env::op_role_id());
     let list_channel_id = ChannelId(env::list_channel_id());
     let has_list_json = env::has_list_json().is_some();
+    let has_easyauth = env::has_easyauth().is_some();
     let server_directory = env::server_directory();
 
     let db_api = || -> Option<MonadApi> {
@@ -290,6 +298,7 @@ async fn main() {
                     cache: Arc::new(Mutex::new(cache)),
                     restart_scheduled: Arc::new(Mutex::new(false)),
                     has_list_json,
+                    has_easyauth,
                     server_directory: server_directory.into_boxed_str(),
                     db_api: db_api.map(Arc::new),
                 };

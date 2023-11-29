@@ -18,7 +18,10 @@ require_envs! {
     "LIST_CHANNEL_ID should be set to the id of the channel where the bot will post the updated player list.";
 
     has_list_json?, "HAS_LIST_JSON", EnvUnit, // TODO: make this a proper flag if possible
-    "HAS_LIST_JSON, if set, signifies to the bot that the server support's boolean_coercion's \"/list json\" protocol.";
+    "HAS_LIST_JSON, if set, signifies to the bot that the server supports boolean_coercion's \"/list json\" protocol.";
+
+    has_easyauth?, "HAS_EASYAUTH", EnvUnit, // TODO: make this a proper flag if possible
+    "HAS_LIST_JSON, if set, signifies to the bot that the server uses EasyAuth and that its config file should be modified for offline mode users.";
 
     server_directory, "SERVER_DIR", String,
     "SERVER_DIR should be set to the root directory where the minecraft server files reside.";
