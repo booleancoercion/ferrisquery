@@ -14,16 +14,16 @@ pub enum Error {
     Unsuccessful(Response),
 
     #[error("json deserialization error ({0})")]
-    JsonDeserializationError(#[from] serde_json::Error),
+    JsonDeserialization(#[from] serde_json::Error),
 
     #[error("uuid_mc error ({0})")]
-    UuidMcError(#[from] uuid_mc::Error),
+    UuidMc(#[from] uuid_mc::Error),
 
     #[error("uuid error ({0})")]
-    UuidError(#[from] uuid_mc::uuid::Error),
+    Uuid(#[from] uuid_mc::uuid::Error),
 
     #[error("user id parse error ({0})")]
-    UserIdParseError(#[from] ParseIntError),
+    UserIdParse(#[from] ParseIntError),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -192,6 +192,7 @@ impl MonadApi {
             .await
     }
 
+    #[allow(unused)]
     pub async fn insert_user_with_uuid(
         &self,
         discord_id: UserId,
@@ -207,6 +208,7 @@ impl MonadApi {
             .await
     }
 
+    #[allow(unused)]
     async fn delete_admin_discord(&self, user_id: &str) -> Result<(), Error> {
         let response = self
             .admin_request(Method::DELETE, &format!("discord/{user_id}"))
@@ -220,6 +222,7 @@ impl MonadApi {
         }
     }
 
+    #[allow(unused)]
     pub async fn delete_user_with_discord(&self, discord_id: UserId) -> Result<(), Error> {
         self.delete_admin_discord(&discord_id.to_string()).await
     }
