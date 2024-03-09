@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use poise::serenity_prelude::AttachmentType;
+use poise::serenity_prelude::CreateAttachment;
+use poise::CreateReply;
 use tokio::fs;
 
 use crate::{Context, Error};
@@ -18,11 +19,11 @@ pub async fn crash(ctx: Context<'_>) -> Result<(), Error> {
         .unwrap()
         .as_secs();
 
-    ctx.send(|reply| {
-        reply
-            .attachment(AttachmentType::Path(&file))
-            .content(format!("This file was created <t:{created}:R>.",))
-    })
+    ctx.send(
+        CreateReply::default()
+            .attachment(CreateAttachment::path(&file).await?)
+            .content(format!("This file was created <t:{created}:R>.",)),
+    )
     .await?;
 
     Ok(())

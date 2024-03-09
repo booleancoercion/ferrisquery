@@ -1,4 +1,6 @@
-use poise::serenity_prelude::{UserId, UserIdParseError};
+use std::num::ParseIntError;
+
+use poise::serenity_prelude::UserId;
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::{Deserialize, Serialize};
 use uuid_mc::PlayerUuid;
@@ -21,7 +23,7 @@ pub enum Error {
     UuidError(#[from] uuid_mc::uuid::Error),
 
     #[error("user id parse error ({0})")]
-    UserIdParseError(#[from] UserIdParseError),
+    UserIdParseError(#[from] ParseIntError),
 }
 
 #[derive(Serialize, Deserialize)]

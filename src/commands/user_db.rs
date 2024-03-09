@@ -1,3 +1,5 @@
+use poise::{serenity_prelude::CreateAllowedMentions, CreateReply};
+
 use crate::{database_api, Context, Error};
 
 pub async fn db_available(ctx: Context<'_>) -> Result<bool, Error> {
@@ -37,11 +39,11 @@ async fn with_mc(
         Err(why) => return Err(why.into()),
     };
 
-    ctx.send(|reply| {
-        reply
+    ctx.send(
+        CreateReply::default()
             .content(user.pretty_string())
-            .allowed_mentions(|mentions| mentions.empty_users().empty_roles())
-    })
+            .allowed_mentions(CreateAllowedMentions::new().empty_users().empty_roles()),
+    )
     .await?;
 
     Ok(())
@@ -66,11 +68,11 @@ async fn with_discord(
         Err(why) => return Err(why.into()),
     };
 
-    ctx.send(|reply| {
-        reply
+    ctx.send(
+        CreateReply::default()
             .content(user.pretty_string())
-            .allowed_mentions(|mentions| mentions.empty_users().empty_roles())
-    })
+            .allowed_mentions(CreateAllowedMentions::new().empty_users().empty_roles()),
+    )
     .await?;
 
     Ok(())

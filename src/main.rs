@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use database_api::MonadApi;
 use once_cell::sync::OnceCell;
-use poise::serenity_prelude as serenity;
+use poise::serenity_prelude::{self as serenity, ClientBuilder, CreateMessage, EditMessage};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serenity::{ChannelId, MessageId, RoleId};
@@ -40,7 +40,7 @@ async fn on_error<U>(
     error: poise::FrameworkError<'_, U, Error>,
 ) -> Result<(), poise::serenity_prelude::Error> {
     match &error {
-        poise::FrameworkError::Command { error, ctx } => {
+        poise::FrameworkError::Command { error, ctx, .. } => {
             let simple = error.to_string();
             ctx.say(simple).await?;
 
@@ -147,7 +147,7 @@ async fn set_list_text(data: &Data, http: &poise::serenity_prelude::Http, text: 
     }) = *cache
     {
         if let Err(why) = list_channel_id
-            .edit_message(http, list_message_id, |m| m.content(text))
+            .edit_message(http, list_message_id, EditMessage::new().content(text))
             .await
         {
             eprintln!("Couldn't edit list message: {why}")
@@ -155,7 +155,7 @@ async fn set_list_text(data: &Data, http: &poise::serenity_prelude::Http, text: 
     } else {
         let message = match data
             .list_channel_id
-            .send_message(http, |m| m.content(text))
+            .send_message(http, CreateMessage::new().content(text))
             .await
         {
             Ok(message) => message,
@@ -215,8 +215,8 @@ async fn main() {
     let addr = env::rcon_addr();
     let password = env::rcon_pass();
     let token = env::discord_token();
-    let op_role_id = RoleId(env::op_role_id());
-    let list_channel_id = ChannelId(env::list_channel_id());
+    let op_role_id = RoleId::new(env::op_role_id());
+    let list_channel_id = ChannelId::new(env::list_channel_id());
     let has_list_json = env::has_list_json().is_some();
     let has_easyauth = env::has_easyauth().is_some();
     let server_directory = env::server_directory();
@@ -267,8 +267,7 @@ async fn main() {
         }
     }
 
-    poise::Framework::builder()
-        .token(token)
+    let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: vec![
                 commands::source(),
@@ -311,8 +310,14 @@ async fn main() {
                 Ok(data)
             })
         })
-        .intents(poise::serenity_prelude::GatewayIntents::non_privileged())
-        .run()
-        .await
-        .unwrap();
+        .build();
+
+    let client = ClientBuilder::new(
+        token,
+        poise::serenity_prelude::GatewayIntents::non_privileged(),
+    )
+    .framework(framework)
+    .await;
+
+    client.unwrap().start().await.unwrap();
 }
