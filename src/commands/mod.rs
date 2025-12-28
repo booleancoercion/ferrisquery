@@ -2,6 +2,7 @@ mod crash;
 mod run;
 mod schedule_restart;
 mod source;
+mod tp_offline;
 mod user_db;
 mod whitelist;
 
@@ -9,6 +10,7 @@ pub use crash::crash;
 pub use run::run;
 pub use schedule_restart::schedule_restart;
 pub use source::source;
+pub use tp_offline::tp_offline;
 pub use user_db::user_db;
 use uuid_mc::PlayerUuid;
 pub use whitelist::whitelist;
