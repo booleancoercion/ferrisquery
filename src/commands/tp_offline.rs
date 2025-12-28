@@ -80,8 +80,21 @@ pub async fn tp_offline(
         }
 
         let bytes = fastnbt::to_bytes(&data)?;
-        let mut encoder = GzEncoder::new(file, Compression::fast());
+
+        let temp_path = path.with_added_extension(".tmp");
+        let temp_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .append(false)
+            .create(true)
+            .truncate(true)
+            .open(&temp_path)
+            .map_err(Error::from)?;
+
+        let mut encoder = GzEncoder::new(&temp_file, Compression::fast());
+
         encoder.write_all(&bytes)?;
+        std::fs::rename(temp_path, &path)?;
 
         Ok((original_bytes, data))
     })
