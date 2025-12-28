@@ -75,8 +75,19 @@ pub async fn tp_offline(
         }
 
         data.pos = vec![x, y, z];
-        if let Some(dimension) = dimension {
-            data.dimension = dimension;
+        if let Some(ref dimension) = dimension {
+            data.dimension = dimension.clone();
+        }
+
+        if let Some(vehicle) = &mut data.root_vehicle {
+            if vehicle.entity.pos.len() != 3 {
+                return Err(format!("Expected RootVehicle.Entity.Pos to be a list of 3 64-bit floating point numbers but found {:?} instead.", vehicle.entity.pos).into());
+            }
+
+            vehicle.entity.pos = vec![x, y, z];
+            if let Some(dimension) = dimension {
+                vehicle.entity.dimension = dimension;
+            }
         }
 
         let bytes = fastnbt::to_bytes(&data)?;
@@ -124,6 +135,28 @@ pub async fn tp_offline(
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct PlayerData {
+    pub pos: Vec<f64>,
+    pub dimension: String,
+
+    #[serde(default)]
+    pub root_vehicle: Option<RootVehicle>,
+
+    #[serde(flatten)]
+    pub other: HashMap<String, Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "PascalCase")]
+pub struct RootVehicle {
+    pub entity: Entity,
+
+    #[serde(flatten)]
+    pub other: HashMap<String, Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "PascalCase")]
+pub struct Entity {
     pub pos: Vec<f64>,
     pub dimension: String,
 
