@@ -94,6 +94,10 @@ pub async fn tp_offline(
         let mut encoder = GzEncoder::new(&temp_file, Compression::fast());
 
         encoder.write_all(&bytes)?;
+
+        // Drop and unlock the original .dat file
+        drop(file);
+
         std::fs::rename(temp_path, &path)?;
 
         Ok((original_bytes, data))
