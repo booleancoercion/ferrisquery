@@ -2,10 +2,16 @@ use flate2::{
     read::{GzDecoder, GzEncoder},
     Compression,
 };
-use poise::{serenity_prelude::CreateAttachment, CreateReply};
+use poise::{
+    serenity_prelude::{
+        futures::{self, Stream},
+        CreateAttachment,
+    },
+    CreateReply,
+};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::{collections::HashMap, fs::OpenOptions, io::Read, path::PathBuf};
+use std::{collections::HashMap, fs::OpenOptions, io::Read, path::PathBuf, str::FromStr};
+use std::{io::Write, path::Path};
 
 use fastnbt::Value;
 use uuid_mc::{PlayerUuid, Uuid};
@@ -27,12 +33,48 @@ async fn autocomplete_dimension<'a>(
         .filter(move |s| s.contains(partial))
 }
 
+async fn autocomplete_offline_player_uuid(ctx: Context<'_>, partial: &str) -> Vec<String> {
+    let dir = ctx.data().server_directory.clone();
+
+    let Ok(Some(file_uuids)) = tokio::task::spawn_blocking(move || {
+        Some(
+            std::fs::read_dir(PathBuf::from_str(&dir).ok()?)
+                .ok()?
+                .filter_map(Result::ok)
+                .filter_map(|e| {
+                    e.file_name()
+                        .to_str()
+                        .and_then(|s| s.strip_suffix(".dat"))
+                        .map(ToString::to_string)
+                })
+                .collect::<Vec<_>>(),
+        )
+    })
+    .await
+    else {
+        return vec![];
+    };
+
+    let Ok(players) = ctx.data().interface.lock().await.player_list().await else {
+        return vec![];
+    };
+
+    file_uuids
+        .into_iter()
+        .filter(|u| u.contains(partial))
+        .filter_map(|u| uuid_mc::Uuid::from_str(&u).ok())
+        .filter(|d| !players.iter().any(|p| p.uuid.as_uuid() == d))
+        .map(|u| u.as_hyphenated().to_string())
+        .collect()
+}
+
 /// Teleport an offline player.
 #[poise::command(slash_command, guild_only, check = "super::operator_only")]
 pub async fn tp_offline(
     ctx: Context<'_>,
-    #[description = "Name or UUID of the player"] player: String,
-    #[description = "Whether it's an online user or an offline one."] mode: super::OfflineOnline,
+    #[description = "Name or UUID of the player"]
+    #[autocomplete = "autocomplete_offline_player_uuid"]
+    player: String,
     #[description = "X coordinate"] x: f64,
     #[description = "Y coordinate"] y: f64,
     #[description = "Z coordinate"] z: f64,
@@ -40,10 +82,7 @@ pub async fn tp_offline(
     #[autocomplete = "autocomplete_dimension"]
     dimension: Option<String>,
 ) -> Result<(), Error> {
-    let uuid = match Uuid::parse_str(&player) {
-        Ok(uuid) => PlayerUuid::new_with_uuid(uuid)?,
-        Err(_) => get_uuid(&player, mode).await?,
-    };
+    let uuid = PlayerUuid::new_with_uuid(Uuid::parse_str(&player)?)?;
 
     let path = {
         let mut filename = uuid.as_uuid().hyphenated().to_string();
