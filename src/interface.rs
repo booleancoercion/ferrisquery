@@ -36,4 +36,35 @@ impl Interface {
             Err(why) => Err(why),
         }
     }
+
+    pub async fn player_list(&mut self) -> std::result::Result<Vec<PlayerInfo>, crate::Error> {
+        let list_output = self.exec("list uuids").await?;
+        let mut list = Vec::with_capacity(list_output.bytes().filter(|&b| b == b',').count());
+
+        let Some((_, players)) = list_output.split_once("players online: ") else {
+            return Ok(list);
+        };
+
+        for p in players.split(", ") {
+            let Some((name, uuid)) = p.rsplit_once(" (") else {
+                return Err("Expected player information in form `name (uuid)` but could not find ` (` {p} in {list_output}".into());
+            };
+
+            let Some((uuid, _)) = uuid.rsplit_once(")") else {
+                return Err("Expected player information in form `name (uuid)` but could not find ending `)` {p} in {list_output}".into());
+            };
+
+            list.push(PlayerInfo {
+                name: name.into(),
+                uuid: uuid_mc::PlayerUuid::new_with_uuid(uuid_mc::Uuid::parse_str(uuid)?)?,
+            });
+        }
+
+        Ok(list)
+    }
+}
+
+pub struct PlayerInfo {
+    pub name: Box<str>,
+    pub uuid: uuid_mc::PlayerUuid,
 }

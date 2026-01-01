@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 env_logger = "0.10.0"
+fastnbt = "2.6.0"
+flate2 = "1.1.5"
 itertools = "0.10.5"
 log = "0.4.17"
 menv = "0.2.5"

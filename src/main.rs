@@ -276,6 +276,7 @@ async fn main() {
                 commands::crash(),
                 commands::user_db(),
                 commands::whitelist(),
+                commands::tp_offline(),
             ],
             on_error: |error| {
                 Box::pin(async move {
