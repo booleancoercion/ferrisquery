@@ -12,6 +12,21 @@ use uuid_mc::{PlayerUuid, Uuid};
 
 use crate::{commands::get_uuid, Context, Error};
 
+async fn autocomplete_dimension<'a>(
+    _ctx: Context<'_>,
+    partial: &'a str,
+) -> impl Iterator<Item = &'static str> + 'a {
+    const KNOWN_DIMENSIONS: [&str; 3] = [
+        "minecraft:overworld",
+        "minecraft:the_nether",
+        "minecraft:the_end",
+    ];
+
+    KNOWN_DIMENSIONS
+        .into_iter()
+        .filter(move |s| s.contains(partial))
+}
+
 /// Teleport an offline player.
 #[poise::command(slash_command, guild_only, check = "super::operator_only")]
 pub async fn tp_offline(
@@ -21,7 +36,9 @@ pub async fn tp_offline(
     #[description = "X coordinate"] x: f64,
     #[description = "Y coordinate"] y: f64,
     #[description = "Z coordinate"] z: f64,
-    #[description = "Dimension ID"] dimension: Option<String>,
+    #[description = "Dimension ID"]
+    #[autocomplete = "autocomplete_dimension"]
+    dimension: Option<String>,
 ) -> Result<(), Error> {
     let uuid = match Uuid::parse_str(&player) {
         Ok(uuid) => PlayerUuid::new_with_uuid(uuid)?,
