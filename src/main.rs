@@ -127,7 +127,7 @@ async fn list_updater(data: Data, http: Arc<poise::serenity_prelude::Http>) {
                 }
             }
             Err(why) => {
-                set_list_text(&data, &http, &why).await;
+                set_list_text(&data, &http, &why.to_string()).await;
             }
         }
     }
@@ -190,7 +190,6 @@ async fn set_list_text(data: &Data, http: &poise::serenity_prelude::Http, text: 
     }
 }
 
-static LIST_REGEX: OnceCell<Regex> = OnceCell::new();
 static TAG_REGEX: OnceCell<Regex> = OnceCell::new();
 static NAUGHTY_REGEX: OnceCell<Regex> = OnceCell::new();
 static NAUGHTY_NICKNAME: &str = "I MADE BOOL SAD";
@@ -231,12 +230,6 @@ async fn main() {
         ))
     }();
 
-    LIST_REGEX
-        .set(
-            Regex::new(r"^There are (\d+) of a max of (\d+) players online:(?: ((?:\w+, )*\w+))?$")
-                .unwrap(),
-        )
-        .unwrap();
     TAG_REGEX
         .set(
             Regex::new(r"</?(?:color|c|yellow|dark_blue|dark_purple|gold|red|aqua|gray|light_purple|white|dark_gray|green|dark_green|blue|dark_aqua|dark_green|black|gradient|gr|rainbow|rb|reset)(?::[^>]*)?>")
@@ -276,6 +269,7 @@ async fn main() {
                 commands::crash(),
                 commands::user_db(),
                 commands::whitelist(),
+                commands::tp_offline(),
             ],
             on_error: |error| {
                 Box::pin(async move {
